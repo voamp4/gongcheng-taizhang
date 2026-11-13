@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工程台账 · 项目进度与节点图纸附件管理</title>
+<!-- Supabase SDK -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+  :root{
+    --canvas:#f4f3ef;
+    --surface:#ffffff;
+    --surface-2:#faf9f6;
+    --ink:#1b1a18;
+    --ink-2:#6b6862;
+    --ink-3:#9a968e;
+    --line:#e6e3dc;
+    --accent:#0f6b5c;
+    --accent-soft:#e7f2ef;
+    --danger:#b3402f;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--canvas);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .hidden{display:none !important}
+  button{font-family:inherit;cursor:pointer}
+  input,textarea,select{font-family:inherit}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  .boot{height:100%;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:13px;gap:10px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent);animation:pulse 1.1s infinite ease-in-out}
+  @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+
+  /* 登录界面 */
+  .auth{height:100%;display:flex;align-items:center;justify-content:center;padding:24px}
+  .auth-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:32px 28px 26px}
+  .brand{font-size:19px;font-weight:600;letter-spacing:.01em}
+  .auth-sub{color:var(--ink-2);font-size:13px;margin:8px 0 22px;line-height:1.6}
+  .tabs{display:flex;gap:4px;background:#f3f1ec;padding:3px;border-radius:9px;margin-bottom:18px}
+  .tabs button{flex:1;border:0;background:transparent;border-radius:7px;padding:7px 0;font-size:13px;color:var(--ink-2)}
+  .tabs button.active{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06);font-weight:500}
+  .field{display:block;margin-bottom:13px}
+  .field span{display:block;font-size:12px;color:var(--ink-2);margin-bottom:6px}
+  .field input{width:100%;height:40px;border:1px solid var(--line);border-radius:9px;padding:0 12px;font-size:14px;background:#fff;color:var(--ink)}
+  .field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .form-error{color:var(--danger);font-size:12.5px;margin:2px 0 10px;min-height:16px;line-height:1.5}
+  .primary{width:100%;height:42px;border:0;border-radius:9px;background:var(--accent);color:#fff;font-size:14px;font-weight:500}
+  .primary:disabled{opacity:.6;cursor:default}
+  .auth-note{font-size:12px;color:var(--ink-3);margin:14px 0 0;line-height:1.6}
+
+  /* 主界面 */
+  .app{display:flex;height:100vh;overflow:hidden}
+  .sidebar{width:320px;flex:0 0 320px;background:var(--surface-2);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .side-head{padding:16px 14px 10px;display:flex;align-items:center;justify-content:space-between}
+  .side-title{font-size:15px;font-weight:600}
+  .head-btns{display:flex;gap:6px}
+  .ghost{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;font-size:12px;padding:6px 9px}
+  .ghost:hover{border-color:#d5d1c8;background:#fdfcfb}
+
+  /* 搜索与过滤 */
+  .search-box{padding:0 12px 10px;display:flex;flex-direction:column;gap:6px}
+  .search-box input{width:100%;height:34px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:0 11px;font-size:13px;color:var(--ink)}
+  .filter-row{display:flex;gap:6px}
+  .filter-row select{flex:1;height:28px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:11.5px;color:var(--ink-2);padding:0 6px}
+
+  .note-list{flex:1;overflow-y:auto;padding:2px 8px 10px;min-height:0}
+  .note-item{padding:11px 12px;border-radius:9px;cursor:pointer;border:1px solid transparent;margin-bottom:3px}
+  .note-item:hover{background:#f2f0ea}
+  .note-item.active{background:#fff;border-color:var(--line);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .note-title{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .note-units{font-size:12px;color:var(--ink-2);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .note-time{font-size:11px;color:#b3aea4;margin-top:7px;display:flex;justify-content:space-between;gap:8px}
+  .list-empty{color:var(--ink-3);font-size:12.5px;text-align:center;padding:36px 12px;line-height:1.7}
+  
+  .side-foot{border-top:1px solid var(--line);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .email{font-size:11.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-actions{display:flex;gap:2px;flex:0 0 auto}
+  .link{border:0;background:none;color:var(--ink-2);font-size:12px;padding:2px}
+  .link:hover{color:var(--danger)}
+
+  .main{flex:1;min-width:0;background:var(--surface);display:flex;flex-direction:column;min-height:0}
+  .editor{flex:1;overflow-y:auto;width:100%;padding:30px 44px 36px}
+  .editor-inner{max-width:880px;margin:0 auto}
+  .editor-empty{margin:22vh auto 0;color:var(--ink-3);font-size:13px;text-align:center;line-height:2;max-width:320px}
+
+  .title-input{border:0;outline:0;padding:0;width:100%;font-size:25px;font-weight:600;letter-spacing:-.01em;color:var(--ink);background:transparent}
+  .title-input::placeholder{color:#cdc8bf}
+  .section-label{font-size:11px;color:var(--ink-3);letter-spacing:.06em;margin:26px 0 9px}
+
+  /* 表单网格 */
+  .info-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:18px}
+  .info-cell{display:flex;flex-direction:column;justify-content:flex-start;min-width:0;margin:0}
+  .info-cell>span{display:block;height:16px;line-height:16px;font-size:11.5px;color:var(--ink-3);margin-bottom:6px}
+  
+  .info-input{
+    display:block;width:100%;height:36px;line-height:34px;border:1px solid var(--line);
+    border-radius:8px;padding:0 10px;font-size:13.5px;background:#fcfbf9;color:var(--ink);
+    margin:0;box-sizing:border-box;
+  }
+  .info-input:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px var(--accent-soft)}
+
+  /* 工期与日期网格 */
+  .period{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:start;margin-top:14px}
+  .input-suffix{position:relative;display:block;width:100%;margin:0;padding:0}
+  .input-suffix input{padding-right:32px}
+  .input-suffix em{position:absolute;right:11px;top:0;height:36px;display:flex;align-items:center;font-style:normal;font-size:12px;color:var(--ink-3);pointer-events:none}
+  
+  .readout{
+    display:block;width:100%;height:36px;line-height:34px;font-size:13.5px;color:var(--ink-2);
+    border:1px dashed var(--line);border-radius:8px;padding:0 10px;background:#faf9f6;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;box-sizing:border-box;
+  }
+  .readout.empty{color:#bdb8af}
+  .period-sum{font-size:12.5px;color:var(--ink-2);margin-top:11px}
+  .bar{height:3px;background:#eeece6;border-radius:2px;margin-top:9px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);border-radius:2px;transition:width .25s}
+  .bar.late i{background:var(--danger)}
+
+  /* 里程碑与节点卡片 */
+  .ms-head{display:flex;align-items:center;justify-content:space-between;margin:30px 0 12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .ms-head h3{margin:0;font-size:14px;font-weight:600;display:inline-block}
+  .ms-count{font-size:12px;color:var(--ink-3);margin-left:8px}
+  
+  .ms-card{background:#fcfbf9;border:1px solid var(--line);border-radius:10px;padding:12px 14px;transition:border-color .2s}
+  .ms-card:hover{border-color:#d5d1c8}
+  .ms-card.done{background:#faf9f6;opacity:0.92}
+  .ms-main-row{display:grid;grid-template-columns:136px minmax(0,1fr) 32px auto;gap:8px;align-items:center}
+  .ms-card.done .ms-title{color:var(--ink-3);text-decoration:line-through}
+  .ms-date,.ms-title{width:100%;border:1px solid transparent;background:transparent;border-radius:7px;padding:6px 8px;font-size:13px;color:var(--ink)}
+  .ms-date:hover,.ms-title:hover{background:#fff;border-color:var(--line)}
+  .ms-date:focus,.ms-title:focus{outline:none;border-color:var(--accent);background:#fff}
+  .ms-date.error{border-color:var(--danger) !important;background:#fdf2f0 !important}
+  
+  .ms-check{width:26px;height:26px;border-radius:50%;border:1px solid var(--line);background:#fff;color:#fff;font-size:13px;line-height:1;padding:0}
+  .ms-check:hover{border-color:var(--accent)}
+  .ms-card.done .ms-check{background:var(--accent);border-color:var(--accent)}
+  
+  /* 节点删除按钮：二次确认样式 */
+  .ms-del{height:26px;padding:0 6px;border:1px solid transparent;border-radius:6px;background:none;color:#c7c2b9;font-size:13px;line-height:24px;white-space:nowrap}
+  .ms-del:hover{color:var(--danger);background:#fbf4f3}
+  .ms-del.armed{color:#fff;background:var(--danger);border-color:var(--danger);font-size:11.5px;padding:0 8px}
+
+  /* 节点间隙插入条 */
+  .ms-insert-gap{display:flex;align-items:center;justify-content:center;padding:6px 0;position:relative}
+  .ms-insert-line{position:absolute;left:0;right:0;top:50%;height:1px;background:#eeece6;z-index:1}
+  .ms-insert-btn{position:relative;z-index:2;background:#fff;border:1px dashed #d5d1c8;border-radius:12px;padding:3px 10px;font-size:11px;color:var(--ink-3);cursor:pointer;transition:.18s}
+  .ms-insert-btn:hover{color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+
+  /* 里程碑配套附件（图片/CAD图纸/PDF/Excel/Word，带备注） */
+  .ms-photos-area{margin-top:12px;padding-top:10px;border-top:1px dashed #e8e5de;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .ms-file-card{width:112px;display:flex;flex-direction:column;gap:5px}
+  .ms-file-box{position:relative;width:112px;height:82px;border-radius:6px;overflow:hidden;border:1px solid var(--line);background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer}
+  .ms-file-box img{width:100%;height:100%;object-fit:cover;display:block}
+  .ms-file-icon{font-size:24px;line-height:1;margin-bottom:3px}
+  .ms-file-name{font-size:10.5px;color:var(--ink-2);padding:0 6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
+  .ms-file-badge{font-size:9px;color:#fff;background:var(--accent);padding:1px 4px;border-radius:3px;margin-top:2px}
+  .ms-file-badge.cad{background:#1e40af}
+  
+  .ms-file-del{position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:rgba(0,0,0,0.65);color:#fff;border:0;font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:2}
+  .ms-file-del:hover{background:var(--danger)}
+  .ms-photo-desc{width:100%;height:24px;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px;color:var(--ink);background:#fff}
+  .ms-photo-desc:focus{outline:none;border-color:var(--accent)}
+  .ms-upload-btn{width:112px;height:82px;border:1px dashed var(--line);border-radius:6px;background:#fff;color:var(--ink-3);font-size:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer}
+  .ms-upload-btn:hover{border-color:var(--accent);color:var(--accent)}
+  .ms-photo-tip{font-size:11.5px;color:var(--ink-3);align-self:center;margin-left:4px}
+
+  .editor-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:32px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3)}
+  .status{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .danger-btn{border:1px solid var(--line);background:#fff;color:var(--ink-2);border-radius:7px;font-size:12px;padding:5px 10px;white-space:nowrap}
+  .danger-btn:hover{color:var(--danger);border-color:#e7c9c3}
+  .danger-btn.armed{color:#fff;background:var(--danger);border-color:var(--danger)}
+
+  /* 导出日期选择弹窗 */
+  .modal-mask{position:fixed;inset:0;background:rgba(27,26,24,0.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:90}
+  .modal-card{width:100%;max-width:390px;background:#fff;border-radius:14px;padding:24px 22px;box-shadow:0 10px 25px rgba(0,0,0,0.1)}
+  .modal-title{font-size:16px;font-weight:600;margin-bottom:6px}
+  .modal-sub{font-size:12.5px;color:var(--ink-2);margin-bottom:16px;line-height:1.5}
+  .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .btn-sm{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 14px;font-size:13px;color:var(--ink)}
+  .btn-sm.solid{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);background:#26241f;color:#fff;font-size:13px;padding:10px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:.22s;max-width:80vw;line-height:1.5;z-index:80}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.err{background:#7d2b1e}
+
+  @media (max-width:820px){
+    .app{flex-direction:column}
+    .sidebar{width:100%;flex:0 0 42vh;border-right:0;border-bottom:1px solid var(--line)}
+    .editor{padding:20px 16px}
+    .info-grid{grid-template-columns:1fr}
+    .period{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<div id="boot" class="boot"><span class="dot"></span><span id="boot-text">正在连接…</span></div>
+
+<!-- 登录界面 -->
+<div id="auth" class="auth hidden">
+  <div class="auth-card">
+    <div class="brand">工程台账管理系统</div>
+    <p class="auth-sub">记录项目参建单位、工期预警、CAD图纸及现场影像。<br>基于 Supabase 个人隔离安全存储。</p>
+    <div class="tabs">
+      <button type="button" data-mode="signin" class="active">登录</button>
+      <button type="button" data-mode="signup">注册</button>
+    </div>
+    <form id="auth-form" novalidate>
+      <label class="field"><span>邮箱</span>
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+      </label>
+      <label class="field"><span>密码</span>
+        <input id="password" type="password" autocomplete="current-password" placeholder="至少 6 位" required>
+      </label>
+      <p class="form-error" id="auth-error"></p>
+      <button class="primary" id="auth-submit" type="submit">登录</button>
+    </form>
+    <p class="auth-note" id="auth-note"></p>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="side-head">
+      <div class="side-title">工程台账</div>
+      <div class="head-btns">
+        <button class="ghost" id="btn-export-open" title="按时间区间导出图文档案 Word">📄 导出 Word</button>
+        <button class="ghost" id="btn-new" title="新建项目">＋ 新建</button>
+      </div>
+    </div>
+    
+    <!-- 搜索与多维筛选 -->
+    <div class="search-box">
+      <input id="search" type="search" placeholder="搜索项目、单位、CAD图纸、附件备注...">
+      <div class="filter-row">
+        <select id="filter-status">
+          <option value="all">工期状态：全部</option>
+          <option value="ongoing">进行中</option>
+          <option value="late">已超期预警</option>
+          <option value="not_started">未开工</option>
+        </select>
+        <select id="filter-unit">
+          <option value="all">参建单位：全部</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="note-list" id="note-list"></div>
+    <div class="side-foot">
+      <span class="email" id="user-email"></span>
+      <span class="foot-actions">
+        <button class="link" id="btn-signout">退出</button>
+      </span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="editor">
+      <div class="editor-inner">
+        <div class="editor-empty" id="editor-empty">
+          从左侧选择工程项目，或点击「新建」录入台账
+        </div>
+
+        <div class="hidden" id="editor-body">
+          <input class="title-input" id="title" maxlength="200" placeholder="项目名称（如：新都区供水管道改造工程）">
+
+          <div class="section-label">工程参建主体</div>
+          <div class="info-grid">
+            <label class="info-cell"><span>建设单位</span>
+              <input class="info-input" id="owner-unit" placeholder="例：成都市香源供水有限责任公司">
+            </label>
+            <label class="info-cell"><span>施工单位</span>
+              <input class="info-input" id="builder-unit" placeholder="例：中建三局">
+            </label>
+            <label class="info-cell"><span>劳务单位</span>
+              <input class="info-input" id="labor-unit" placeholder="例：建工劳务作业队">
+            </label>
+          </div>
+
+          <div class="section-label">工期与进度跟踪</div>
+          <div class="period">
+            <label class="info-cell"><span>工期</span>
+              <div class="input-suffix">
+                <input class="info-input" id="duration" type="text" inputmode="numeric" maxlength="4" placeholder="天数">
+                <em>天</em>
+              </div>
+            </label>
+            <label class="info-cell"><span>开工日期</span>
+              <input class="info-input" id="start-date" type="date">
+            </label>
+            <div class="info-cell"><span>竣工日期（自动计算）</span>
+              <div class="readout empty" id="end-view">填工期后自动推算</div>
+            </div>
+          </div>
+          <div class="period-sum" id="period-sum"></div>
+          <div class="bar" id="bar"><i id="bar-fill"></i></div>
+
+          <!-- 里程碑时间节点与配套附件（支持CAD/图片/PDF/Excel/Word） -->
+          <div class="ms-head">
+            <div>
+              <h3>关键里程碑节点（支持上传CAD图纸/现场照片/报告附件）</h3><span class="ms-count" id="ms-count"></span>
+            </div>
+            <button class="ghost" id="btn-add-ms">＋ 追加末尾节点</button>
+          </div>
+          <div class="milestones" id="milestones"></div>
+
+          <!-- 节点附件文件选择器（隐藏，扩充 CAD: .dwg, .dxf） -->
+          <input type="file" id="file-ms-attachment" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf" class="hidden">
+
+          <div class="editor-foot">
+            <span class="status" id="status"></span>
+            <button class="danger-btn" id="btn-delete">删除项目</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 导出日期范围选择弹窗 -->
+<div id="modal-export" class="modal-mask hidden">
+  <div class="modal-card">
+    <div class="modal-title">导出工程汇报 Word</div>
+    <div class="modal-sub">选择需要归档的节点与附件日期区间；若不设置则默认导出全部节点与图纸资料。</div>
+    <label class="field">
+      <span>起始日期（可选）</span>
+      <input type="date" id="export-start-date">
+    </label>
+    <label class="field">
+      <span>截止日期（可选）</span>
+      <input type="date" id="export-end-date">
+    </label>
+    <div class="modal-actions">
+      <button class="btn-sm" id="btn-export-cancel">取消</button>
+      <button class="btn-sm solid" id="btn-export-confirm">确认导出</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var SUPABASE_URL = 'https://tarfvlnyoqrhkujuwghr.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_0T2DnObbmE3QZ2z-93aMrg_coIXRN69';
+  var BUCKET = 'project-files';
+  var COLS = 'id,title,owner_unit,builder_unit,labor_unit,start_date,end_date,duration_days,milestones,created_at,updated_at';
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true }
+  });
+
+  var user = null;
+  var projects = [];
+  var current = null;
+  var dirty = false;
+  var saveTimer = null;
+  var deleteArmed = false;
+  var deleteTimer = null;
+  var armedMsId = null;       // 节点删除二次确认状态
+  var armedMsTimer = null;
+  var uploadTargetMsId = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function uid() {
+    return window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : 'id_' + Math.random().toString(36).slice(2, 9);
+  }
+  function pad(n) { return n < 10 ? '0' + n : String(n); }
+  function toast(msg, isErr) {
+    var el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast show' + (isErr ? ' err' : '');
+    setTimeout(function () { el.className = 'toast'; }, 3800);
+  }
+
+  // 判断是否为图片
+  function isImage(name, url) {
+    var ext = (name || url || '').split('.').pop().toLowerCase().split('?')[0];
+    return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic'].indexOf(ext) > -1;
+  }
+
+  // 获取文件类别图标与简短标识（包含 CAD 图纸）
+  function getFileMeta(name, url) {
+    var ext = (name || url || '').split('.').pop().toLowerCase().split('?')[0];
+    if (ext === 'dwg' || ext === 'dxf') return { icon: '📐', type: 'CAD图纸', isCad: true };
+    if (['xls', 'xlsx', 'csv'].indexOf(ext) > -1) return { icon: '📊', type: 'EXCEL', isCad: false };
+    if (['doc', 'docx'].indexOf(ext) > -1) return { icon: '📝', type: 'WORD', isCad: false };
+    if (ext === 'pdf') return { icon: '📑', type: 'PDF', isCad: false };
+    return { icon: '📁', type: 'FILE', isCad: false };
+  }
+
+  // ===== 工期推算 =====
+  function computeEnd(startStr, days) {
+    if (!startStr || !days) return '';
+    var d = new Date(startStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    d.setDate(d.getDate() + days - 1);
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+
+  function periodOf(p) {
+    if (!p || !p.start_date || !p.end_date) return null;
+    var sd = new Date(p.start_date + 'T00:00:00');
+    var ed = new Date(p.end_date + 'T00:00:00');
+    var total = Math.round((ed - sd) / 86400000) + 1;
+    if (!isFinite(total) || total < 1) return null;
+    var today = new Date(); today.setHours(0, 0, 0, 0);
+    var elapsed = Math.round((today - sd) / 86400000) + 1;
+    var status = elapsed < 1 ? 'not_started' : (elapsed > total ? 'late' : 'ongoing');
+    return { total: total, elapsed: elapsed, pct: Math.max(0, Math.min(100, (elapsed / total) * 100)), status: status };
+  }
+
+  function syncEnd() {
+    if (!current) return;
+    var start = $('start-date').value;
+    var days = parseInt($('duration').value.replace(/[^\d]/g, ''), 10) || 0;
+    var end = (start && days) ? computeEnd(start, days) : '';
+    current.duration_days = days || null;
+    current.end_date = end || null;
+    var view = $('end-view');
+    if (end) {
+      view.textContent = end;
+      view.classList.remove('empty');
+    } else {
+      view.textContent = start ? '填工期后自动推算' : '先选开工日期';
+      view.classList.add('empty');
+    }
+    renderPeriodBar();
+  }
+
+  function renderPeriodBar() {
+    var per = periodOf(current);
+    var sum = $('period-sum'), fill = $('bar-fill'), bar = $('bar');
+    if (!per) {
+      sum.textContent = '填工期后自动推算竣工日期与进度';
+      fill.style.width = '0%';
+      bar.classList.remove('late');
+      return;
+    }
+    if (per.status === 'not_started') {
+      sum.textContent = '工期共 ' + per.total + ' 天 · 尚未开工';
+    } else if (per.status === 'late') {
+      sum.textContent = '工期 ' + per.total + ' 天 · 已超期 ' + (per.elapsed - per.total) + ' 天（预警）';
+      bar.classList.add('late');
+    } else {
+      sum.textContent = '工期共 ' + per.total + ' 天 · 已进行 ' + per.elapsed + ' 天 · 剩余 ' + (per.total - per.elapsed) + ' 天';
+      bar.classList.remove('late');
+    }
+    fill.style.width = per.pct.toFixed(1) + '%';
+  }
+
+  // ===== 列表筛选与渲染 =====
+  function getFilteredProjects() {
+    var q = $('search').value.trim().toLowerCase();
+    var fStatus = $('filter-status').value;
+    var fUnit = $('filter-unit').value;
+
+    return projects.filter(function (p) {
+      var per = periodOf(p);
+      if (fStatus !== 'all') {
+        if (!per && fStatus !== 'not_started') return false;
+        if (per && per.status !== fStatus) return false;
+      }
+      if (fUnit !== 'all') {
+        var matchUnit = (p.owner_unit === fUnit || p.builder_unit === fUnit || p.labor_unit === fUnit);
+        if (!matchUnit) return false;
+      }
+      if (q) {
+        var msTexts = (p.milestones || []).map(function(m){
+          var pDescs = (m.photos || []).map(function(ph){ return (ph.name || '') + ' ' + (ph.desc || ''); }).join(' ');
+          return (m.title || '') + ' ' + pDescs;
+        }).join(' ');
+        var hay = [p.title, p.owner_unit, p.builder_unit, p.labor_unit, msTexts].join(' ').toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function updateUnitFilterOptions() {
+    var sel = $('filter-unit');
+    var curVal = sel.value;
+    var units = new Set();
+    projects.forEach(function (p) {
+      if (p.owner_unit) units.add(p.owner_unit);
+      if (p.builder_unit) units.add(p.builder_unit);
+    });
+    sel.innerHTML = '<option value="all">参建单位：全部</option>' + 
+      Array.from(units).map(function (u) {
+        return '<option value="' + esc(u) + '"' + (u === curVal ? ' selected' : '') + '>' + esc(u) + '</option>';
+      }).join('');
+  }
+
+  function renderList() {
+    var host = $('note-list');
+    var items = getFilteredProjects();
+    if (!items.length) {
+      host.innerHTML = '<div class="list-empty">无匹配工程台账</div>';
+      return;
+    }
+    host.innerHTML = items.map(function (p) {
+      var active = current && current.id === p.id ? ' active' : '';
+      var units = [p.owner_unit, p.builder_unit].filter(Boolean).join(' · ') || '未填写单位';
+      var per = periodOf(p);
+      var statusTag = per ? (per.status === 'late' ? '<span style="color:var(--danger)">超期 ' + (per.elapsed - per.total) + ' 天</span>' : '第 ' + per.elapsed + '/' + per.total + ' 天') : '未排期';
+      var msList = p.milestones || [];
+      var msTag = msList.length ? msList.filter(function(m){ return m.done; }).length + '/' + msList.length + ' 节点' : '';
+
+      return '<div class="note-item' + active + '" data-id="' + p.id + '">' +
+        '<div class="note-title">' + esc(p.title || '未命名工程') + '</div>' +
+        '<div class="note-units">' + esc(units) + '</div>' +
+        '<div class="note-time"><span>' + statusTag + '</span><span>' + msTag + '</span></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  // ===== 导出 Word 汇报简报 =====
+  async function generateWord(startDateFilter, endDateFilter) {
+    if (!current) {
+      toast('请先在左侧选择要导出的工程项目', true);
+      return;
+    }
+
+    toast('正在生成 Word 汇报简报…');
+
+    var p = current;
+    var per = periodOf(p);
+    var statusText = '未排期';
+    if (per) {
+      if (per.status === 'not_started') statusText = '未开工（工期共 ' + per.total + ' 天）';
+      else if (per.status === 'late') statusText = '超期预警（工期 ' + per.total + ' 天，已超期 ' + (per.elapsed - per.total) + ' 天）';
+      else statusText = '正常推进（工期 ' + per.total + ' 天，已进行 ' + per.elapsed + ' 天）';
+    }
+
+    var filteredMilestones = (p.milestones || []).filter(function(m) {
+      if (!startDateFilter && !endDateFilter) return true;
+      if (!m.date) return false;
+      if (startDateFilter && m.date < startDateFilter) return false;
+      if (endDateFilter && m.date > endDateFilter) return false;
+      return true;
+    });
+
+    var rangeLabel = (startDateFilter || endDateFilter)
+      ? '【区间筛选：' + (startDateFilter || '项目起始') + ' 至 ' + (endDateFilter || '至今') + '】'
+      : '【全部节点与现场图纸影像】';
+
+    var msCardsHtml = filteredMilestones.map(function (m, idx) {
+      var photosHtml = '';
+      var attachments = Array.isArray(m.photos) ? m.photos : [];
+      if (attachments.length > 0) {
+        var items = attachments.map(function(item, pIdx){
+          var caption = item.desc ? esc(item.desc) : (item.name ? esc(item.name) : ('附件 ' + (pIdx + 1)));
+          if (isImage(item.name, item.url)) {
+            return '<td style="border:0; padding:4px 6px; text-align:center; vertical-align:top; width:160px;">' +
+              '<div style="width:150px; height:110px; border:1px solid #dcd7ce; background:#f4f3ef; text-align:center; overflow:hidden;">' +
+                '<img src="' + item.url + '" width="150" height="110" style="width:150px; height:110px; max-width:150px; max-height:110px; object-fit:contain; display:block;" />' +
+              '</div>' +
+              '<div style="font-size:10px; color:#444; margin-top:4px; line-height:1.3; font-weight:500;">' + caption + '</div>' +
+              '</td>';
+          } else {
+            var meta = getFileMeta(item.name, item.url);
+            var color = meta.isCad ? '#1e40af' : '#0f6b5c';
+            return '<td style="border:0; padding:4px 6px; text-align:center; vertical-align:top; width:160px;">' +
+              '<div style="width:150px; height:110px; border:1px dashed #dcd7ce; background:#fdfcfb; text-align:center; padding:10px 6px; display:flex; flex-direction:column; justify-content:center; align-items:center;">' +
+                '<div style="font-size:24px;">' + meta.icon + '</div>' +
+                '<div style="font-size:11px; font-weight:bold; color:' + color + '; margin-top:3px;">[' + meta.type + ']</div>' +
+                '<div style="font-size:10px; color:#2b6cb0; text-decoration:underline; margin-top:4px;"><a href="' + item.url + '" target="_blank">点击下载原件</a></div>' +
+              '</div>' +
+              '<div style="font-size:10px; color:#444; margin-top:4px; line-height:1.3; font-weight:500;">' + caption + '</div>' +
+              '</td>';
+          }
+        }).join('');
+        photosHtml = '<table style="width:auto; border:0; margin-top:6px; border-collapse:collapse;"><tr>' + items + '</tr></table>';
+      } else {
+        photosHtml = '<div style="font-size:11px; color:#999; margin-top:5px;">（该节点无现场图纸/照片）</div>';
+      }
+
+      return '<div style="background:#fcfbf9; border:1px solid #e2ded5; border-radius:6px; padding:10px 12px; margin-bottom:12px;">' +
+        '<table style="width:100%; border:0; border-collapse:collapse; margin-bottom:4px;">' +
+          '<tr>' +
+            '<td style="border:0; font-size:13px; font-weight:bold; color:#1b1a18; text-align:left;">' +
+              '节点 ' + (idx + 1) + '：' + esc(m.title || '未命名事项') +
+            '</td>' +
+            '<td style="border:0; font-size:12px; font-weight:bold; color:' + (m.done ? '#0f6b5c' : '#b3402f') + '; text-align:right;">' +
+              (m.done ? '✓ 已达成' : '推进中') +
+            '</td>' +
+          '</tr>' +
+        '</table>' +
+        '<div style="font-size:11.5px; color:#666;">节点目标日期：<strong>' + (m.date || '未设置') + '</strong></div>' +
+        photosHtml +
+      '</div>';
+    }).join('');
+
+    if (!msCardsHtml) {
+      msCardsHtml = '<p style="color:#888; font-size:12px; padding:10px 0;">所选日期区间内暂无里程碑节点记录。</p>';
+    }
+
+    var wordContent = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head>
+        <meta charset='utf-8'>
+        <title>${esc(p.title || '工程项目台账')}</title>
+        <!--[if gte mso 9]>
+        <xml>
+          <w:WordDocument>
+            <w:View>Print</w:View>
+            <w:Zoom>100</w:Zoom>
+            <w:DoNotOptimizeForBrowser/>
+          </w:WordDocument>
+        </xml>
+        <![endif]-->
+        <style>
+          @page {
+            size: A4 portrait;
+            margin: 2.5cm 2.0cm 2.5cm 2.0cm;
+          }
+          body {
+            font-family: "PingFang SC", "Microsoft YaHei", "SimSun", sans-serif;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #1b1a18;
+          }
+          h1 {
+            font-size: 20px;
+            text-align: center;
+            color: #0f6b5c;
+            margin-bottom: 4px;
+            font-weight: bold;
+          }
+          .sub-head {
+            text-align: center;
+            font-size: 11px;
+            color: #777;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #0f6b5c;
+            padding-bottom: 8px;
+          }
+          .section-title {
+            font-size: 13.5px;
+            font-weight: bold;
+            color: #0f6b5c;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            border-left: 4px solid #0f6b5c;
+            padding-left: 8px;
+          }
+          table.info-tb {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+          }
+          table.info-tb th, table.info-tb td {
+            border: 1px solid #d5d1c8;
+            padding: 7px 10px;
+            font-size: 12px;
+          }
+          .label-col {
+            width: 15%;
+            background-color: #f7f6f2;
+            font-weight: bold;
+          }
+          .val-col {
+            width: 35%;
+          }
+          .status-bar-box {
+            background-color: #f4f3ef;
+            padding: 9px 12px;
+            border-radius: 4px;
+            margin-bottom: 14px;
+            border-left: 3px solid #0f6b5c;
+            font-size: 12px;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>${esc(p.title || '工程项目进度及现场档案简报')}</h1>
+        <div class="sub-head">导出归档时间：${new Date().toLocaleDateString()} · ${rangeLabel}</div>
+
+        <div class="section-title">一、 工程基本信息</div>
+        <table class="info-tb">
+          <tr>
+            <td class="label-col">建设单位</td>
+            <td class="val-col">${esc(p.owner_unit || '未填写')}</td>
+            <td class="label-col">施工单位</td>
+            <td class="val-col">${esc(p.builder_unit || '未填写')}</td>
+          </tr>
+          <tr>
+            <td class="label-col">劳务单位</td>
+            <td class="val-col">${esc(p.labor_unit || '未填写')}</td>
+            <td class="label-col">工期天数</td>
+            <td class="val-col">${p.duration_days ? p.duration_days + ' 天' : '未设定'}</td>
+          </tr>
+          <tr>
+            <td class="label-col">开工日期</td>
+            <td class="val-col">${p.start_date || '未设置'}</td>
+            <td class="label-col">竣工日期</td>
+            <td class="val-col">${p.end_date || '未推算'}</td>
+          </tr>
+        </table>
+
+        <div class="status-bar-box">
+          <strong>当前工期研判：</strong> ${statusText}
+        </div>
+
+        <div class="section-title">二、 关键里程碑节点进度及现场CAD/影像资料 ${rangeLabel}</div>
+        <div>
+          ${msCardsHtml}
+        </div>
+      </body>
+      </html>
+    `;
+
+    var blob = new Blob(['\ufeff' + wordContent], { type: 'application/msword;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    var dateSuffix = (startDateFilter || endDateFilter) ? ('_' + (startDateFilter || '') + '~' + (endDateFilter || '')) : '';
+    a.download = (p.title || '工程项目档案') + dateSuffix + '_' + new Date().toISOString().slice(0, 10) + '.doc';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast('Word 档案已生成并导出');
+  }
+
+  // ===== 数据规范化与渲染 =====
+  function normalize(p) {
+    p.milestones = Array.isArray(p.milestones) ? p.milestones : [];
+    p.milestones.forEach(function(m){
+      if (!Array.isArray(m.photos)) m.photos = [];
+      m.photos.forEach(function(ph){
+        if (typeof ph.desc === 'undefined') ph.desc = '';
+        if (typeof ph.name === 'undefined') ph.name = '';
+      });
+    });
+    return p;
+  }
+
+  function renderEditor() {
+    if (!current) {
+      $('editor-empty').classList.remove('hidden');
+      $('editor-body').classList.add('hidden');
+      return;
+    }
+    $('editor-empty').classList.add('hidden');
+    $('editor-body').classList.remove('hidden');
+
+    $('title').value = current.title || '';
+    $('owner-unit').value = current.owner_unit || '';
+    $('builder-unit').value = current.builder_unit || '';
+    $('labor-unit').value = current.labor_unit || '';
+    $('start-date').value = current.start_date || '';
+    $('duration').value = current.duration_days ? String(current.duration_days) : '';
+
+    syncEnd();
+    renderMilestones();
+    $('status').textContent = current.id ? '已同步' : '新建草稿';
+  }
+
+  // 里程碑渲染（含间隙插入按钮与防误删确认）
+  function renderMilestones() {
+    var host = $('milestones');
+    var list = current.milestones || [];
+    var done = list.filter(function(m){ return m.done; }).length;
+    $('ms-count').textContent = list.length ? (done + ' / ' + list.length + ' 已达成') : '';
+    
+    if (!list.length) {
+      host.innerHTML = '<div style="color:var(--ink-3);font-size:12.5px;padding:14px 2px;">暂无节点，点击上方「＋ 追加末尾节点」录入节点。</div>';
+      return;
+    }
+
+    var html = '';
+    
+    // 最顶部插入点（在第1个节点之前插入）
+    html += '<div class="ms-insert-gap">' +
+      '<div class="ms-insert-line"></div>' +
+      '<button type="button" class="ms-insert-btn" onclick="insertMsAt(0)">＋ 在开头插入节点</button>' +
+    '</div>';
+
+    list.forEach(function(m, idx) {
+      var attachments = Array.isArray(m.photos) ? m.photos : [];
+      var attachmentItems = attachments.map(function(p, pIdx){
+        var content = '';
+        if (isImage(p.name, p.url)) {
+          content = '<img src="' + esc(p.url) + '" loading="lazy" onclick="window.open(\'' + esc(p.url) + '\')">';
+        } else {
+          var meta = getFileMeta(p.name, p.url);
+          content = '<div class="ms-file-icon">' + meta.icon + '</div>' +
+                    '<div class="ms-file-name" title="' + esc(p.name || '图纸/文档') + '">' + esc(p.name || '图纸/文档') + '</div>' +
+                    '<span class="ms-file-badge' + (meta.isCad ? ' cad' : '') + '">' + meta.type + '</span>';
+        }
+
+        return '<div class="ms-file-card">' +
+          '<div class="ms-file-box" onclick="if(event.target.tagName!==\'BUTTON\') window.open(\'' + esc(p.url) + '\')">' +
+            '<button class="ms-file-del" onclick="event.stopPropagation(); deleteMsAttachment(\'' + m.id + '\', ' + pIdx + ')" title="删除附件">×</button>' +
+            content +
+          '</div>' +
+          '<input type="text" class="ms-photo-desc" maxlength="40" placeholder="标注部位/图纸说明" value="' + esc(p.desc || '') + '" oninput="updateMsAttachmentDesc(\'' + m.id + '\', ' + pIdx + ', this.value)">' +
+        '</div>';
+      }).join('');
+
+      var uploadBtn = attachments.length < 4
+        ? '<div class="ms-upload-btn" onclick="triggerMsUpload(\'' + m.id + '\')"><span>📐</span><span>＋传图纸/照片</span></div>'
+        : '';
+
+      var isArmed = armedMsId === m.id;
+      var delBtnText = isArmed ? '确认删除' : '×';
+      var delBtnClass = 'ms-del' + (isArmed ? ' armed' : '');
+
+      html += '<div class="ms-card' + (m.done ? ' done' : '') + '" data-id="' + m.id + '">' +
+        '<div class="ms-main-row">' +
+          '<input class="ms-date" type="date" value="' + esc(m.date || '') + '">' +
+          '<input class="ms-title" type="text" placeholder="节点事项（如：施工图技术交底、试压验收）" value="' + esc(m.title) + '">' +
+          '<button class="ms-check" data-act="ms-toggle" title="标记达成">' + (m.done ? '✓' : '') + '</button>' +
+          '<button class="' + delBtnClass + '" data-act="ms-del" title="删除节点">' + delBtnText + '</button>' +
+        '</div>' +
+        '<div class="ms-photos-area">' +
+          attachmentItems +
+          uploadBtn +
+          '<span class="ms-photo-tip">' + (attachments.length ? '已附 ' + attachments.length + '/4 个附件（含CAD/照片）' : '支持 CAD(DWG/DXF)、照片、PDF、表格') + '</span>' +
+        '</div>' +
+      '</div>';
+
+      // 节点间隙插入条（在节点 idx 与 idx+1 之间）
+      html += '<div class="ms-insert-gap">' +
+        '<div class="ms-insert-line"></div>' +
+        '<button type="button" class="ms-insert-btn" onclick="insertMsAt(' + (idx + 1) + ')">＋ 在此处插入节点</button>' +
+      '</div>';
+    });
+
+    host.innerHTML = html;
+  }
+
+  // 插入新节点（日期默认留空，手动在日历选择）
+  window.insertMsAt = function(targetIndex) {
+    if (!current) return;
+    var list = current.milestones || [];
+    var newMs = {
+      id: uid(),
+      date: '',
+      title: '',
+      done: false,
+      photos: []
+    };
+
+    list.splice(targetIndex, 0, newMs);
+    renderMilestones();
+    triggerSave();
+  };
+
+  // 附件备注更新函数（输入防抖保存）
+  window.updateMsAttachmentDesc = function(msId, attachmentIdx, newDesc) {
+    var m = (current.milestones || []).find(function(x){ return x.id === msId; });
+    if (m && m.photos && m.photos[attachmentIdx]) {
+      m.photos[attachmentIdx].desc = newDesc;
+      triggerSave();
+    }
+  };
+
+  // 节点附件上传与删除
+  window.triggerMsUpload = function(msId) {
+    uploadTargetMsId = msId;
+    $('file-ms-attachment').click();
+  };
+
+  window.deleteMsAttachment = function(msId, attachmentIdx) {
+    if (!confirm('确认删除这个节点附件/图纸？')) return;
+    var m = (current.milestones || []).find(function(x){ return x.id === msId; });
+    if (m && m.photos) {
+      m.photos.splice(attachmentIdx, 1);
+      renderMilestones();
+      triggerSave();
+    }
+  };
+
+  async function uploadMsAttachment(file) {
+    if (!file || !uploadTargetMsId || !current) return;
+    var m = (current.milestones || []).find(function(x){ return x.id === uploadTargetMsId; });
+    if (!m) return;
+    if (!Array.isArray(m.photos)) m.photos = [];
+    if (m.photos.length >= 4) { toast('每个节点最多上传 4 个现场图纸或附件', true); return; }
+
+    toast('正在上传文件: ' + file.name + '…');
+    var ext = file.name.split('.').pop();
+    var filePath = user.id + '/' + uid() + '.' + ext;
+
+    var uploadRes = await sb.storage.from(BUCKET).upload(filePath, file);
+    if (uploadRes.error) {
+      toast('上传失败: ' + uploadRes.error.message, true);
+      return;
+    }
+
+    var pubRes = sb.storage.from(BUCKET).getPublicUrl(filePath);
+    m.photos.push({
+      url: pubRes.data.publicUrl,
+      name: file.name,
+      desc: '',
+      created_at: new Date().toISOString()
+    });
+    renderMilestones();
+    triggerSave();
+    toast('图纸/附件已成功上传');
+  }
+
+  function triggerSave() {
+    if (!current) return;
+    dirty = true;
+    $('status').textContent = '未保存';
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveNow, 900);
+  }
+
+  async function saveNow() {
+    clearTimeout(saveTimer);
+    if (!current || !dirty) return;
+    var rawTitle = $('title').value.trim();
+    if (!current.id && !rawTitle) { $('status').textContent = '未录入标题'; return; }
+
+    var payload = {
+      title: rawTitle || '未命名项目',
+      owner_unit: $('owner-unit').value.trim(),
+      builder_unit: $('builder-unit').value.trim(),
+      labor_unit: $('labor-unit').value.trim(),
+      start_date: $('start-date').value || null,
+      end_date: current.end_date,
+      duration_days: current.duration_days,
+      milestones: current.milestones
+    };
+
+    $('status').textContent = '保存中…';
+    if (!current.id) {
+      var ins = await sb.from('projects').insert(payload).select(COLS).single();
+      if (ins.error) { toast('保存失败: ' + ins.error.message, true); return; }
+      current = normalize(ins.data);
+      projects.unshift(current);
+    } else {
+      var upd = await sb.from('projects').update(payload).eq('id', current.id).select(COLS).single();
+      if (upd.error) { toast('保存失败: ' + upd.error.message, true); return; }
+      current = normalize(upd.data);
+      projects = projects.map(function(p){ return p.id === current.id ? current : p; });
+    }
+    dirty = false;
+    $('status').textContent = '已同步';
+    updateUnitFilterOptions();
+    renderList();
+  }
+
+  // ===== 事件监听 =====
+  $('btn-export-open').addEventListener('click', function(){
+    if (!current) { toast('请先在左侧选择要导出的工程项目', true); return; }
+    $('export-start-date').value = '';
+    $('export-end-date').value = '';
+    $('modal-export').classList.remove('hidden');
+  });
+
+  $('btn-export-cancel').addEventListener('click', function(){
+    $('modal-export').classList.add('hidden');
+  });
+
+  $('btn-export-confirm').addEventListener('click', function(){
+    var s = $('export-start-date').value;
+    var e = $('export-end-date').value;
+    if (s && e && s > e) {
+      toast('起始日期不能晚于截止日期', true);
+      return;
+    }
+    $('modal-export').classList.add('hidden');
+    generateWord(s, e);
+  });
+
+  $('search').addEventListener('input', renderList);
+  $('filter-status').addEventListener('change', renderList);
+  $('filter-unit').addEventListener('change', renderList);
+
+  $('btn-new').addEventListener('click', async function(){
+    await saveNow();
+    current = {
+      id: null,
+      title: '',
+      owner_unit: '', builder_unit: '', labor_unit: '',
+      start_date: new Date().toISOString().slice(0, 10),
+      duration_days: 90,
+      milestones: [{ id: uid(), date: '', title: '技术交底与进场', done: false, photos: [] }]
+    };
+    dirty = false;
+    renderEditor();
+    $('title').focus();
+  });
+
+  ['title', 'owner-unit', 'builder-unit', 'labor-unit'].forEach(function(id){
+    $(id).addEventListener('input', function(){ triggerSave(); if (id === 'title') renderList(); });
+  });
+
+  $('duration').addEventListener('input', function(){
+    this.value = this.value.replace(/[^\d]/g, '').slice(0, 4);
+    syncEnd(); triggerSave();
+  });
+  $('start-date').addEventListener('input', function(){ syncEnd(); triggerSave(); });
+
+  // 追加末尾节点
+  $('btn-add-ms').addEventListener('click', function(){
+    if (!current) return;
+    insertMsAt((current.milestones || []).length);
+  });
+
+  // 里程碑事件委托（含与前面所有节点的时间约束校验）
+  $('milestones').addEventListener('change', function(e){
+    if (!e.target.classList.contains('ms-date')) return;
+    var card = e.target.closest('.ms-card'); if (!card) return;
+    var id = card.getAttribute('data-id');
+    var list = current.milestones || [];
+    var idx = list.findIndex(function(x){ return x.id === id; });
+    if (idx === -1) return;
+
+    var selectedDate = e.target.value;
+
+    // 非首个节点，且填写了日期：严格检查前面所有节点的有效日期
+    if (idx > 0 && selectedDate) {
+      var latestConflict = null;
+      for (var i = 0; i < idx; i++) {
+        var prevNode = list[i];
+        if (prevNode && prevNode.date) {
+          if (selectedDate < prevNode.date) {
+            if (!latestConflict || prevNode.date > latestConflict.date) {
+              latestConflict = prevNode;
+            }
+          }
+        }
+      }
+
+      if (latestConflict) {
+        var conflictTitle = latestConflict.title ? '「' + latestConflict.title + '」' : '前序节点';
+        toast('节点时间逻辑错误：当前节点日期不可早于前面的节点 ' + conflictTitle + '（' + latestConflict.date + '）', true);
+        e.target.classList.add('error');
+        e.target.value = '';
+        list[idx].date = '';
+        setTimeout(function(){ e.target.classList.remove('error'); }, 2000);
+        triggerSave();
+        return;
+      }
+    }
+
+    e.target.classList.remove('error');
+    list[idx].date = selectedDate;
+    triggerSave();
+  });
+
+  $('milestones').addEventListener('input', function(e){
+    var card = e.target.closest('.ms-card'); if (!card) return;
+    var m = current.milestones.find(function(x){ return x.id === card.getAttribute('data-id'); });
+    if (!m) return;
+    if (e.target.classList.contains('ms-title')) {
+      m.title = e.target.value;
+      triggerSave();
+    }
+  });
+
+  $('milestones').addEventListener('click', function(e){
+    var btn = e.target.closest('button[data-act]'); if (!btn) return;
+    var card = btn.closest('.ms-card'); var id = card.getAttribute('data-id');
+    var act = btn.getAttribute('data-act');
+    
+    // 节点删除：防误触二次确认
+    if (act === 'ms-del') {
+      if (armedMsId !== id) {
+        armedMsId = id;
+        renderMilestones();
+        clearTimeout(armedMsTimer);
+        armedMsTimer = setTimeout(function(){
+          armedMsId = null;
+          renderMilestones();
+        }, 3000);
+        return;
+      }
+      clearTimeout(armedMsTimer);
+      armedMsId = null;
+      current.milestones = current.milestones.filter(function(m){ return m.id !== id; });
+      renderMilestones();
+      triggerSave();
+      toast('节点已删除');
+    } else if (act === 'ms-toggle') {
+      var m = current.milestones.find(function(x){ return x.id === id; });
+      if (m) {
+        m.done = !m.done;
+        renderMilestones();
+        renderList();
+        triggerSave();
+      }
+    }
+  });
+
+  // 附件选择触发
+  $('file-ms-attachment').addEventListener('change', function(e){
+    if (e.target.files && e.target.files[0]) {
+      uploadMsAttachment(e.target.files[0]);
+      e.target.value = '';
+    }
+  });
+
+  // 选择项目
+  $('note-list').addEventListener('click', function(e){
+    var item = e.target.closest('.note-item');
+    if (item && (!current || current.id !== item.getAttribute('data-id'))) {
+      saveNow();
+      current = projects.find(function(p){ return p.id === item.getAttribute('data-id'); });
+      dirty = false;
+      renderEditor(); renderList();
+    }
+  });
+
+  // 删除项目（二次确认）
+  $('btn-delete').addEventListener('click', async function(){
+    if (!current || !current.id) { current = null; renderEditor(); renderList(); return; }
+    if (!deleteArmed) {
+      deleteArmed = true; this.classList.add('armed'); this.textContent = '再点一次确认删除';
+      deleteTimer = setTimeout(function(){ deleteArmed = false; $('btn-delete').classList.remove('armed'); $('btn-delete').textContent = '删除项目'; }, 3000);
+      return;
+    }
+    var id = current.id;
+    await sb.from('projects').delete().eq('id', id);
+    projects = projects.filter(function(p){ return p.id !== id; });
+    current = null; deleteArmed = false;
+    $('btn-delete').classList.remove('armed'); $('btn-delete').textContent = '删除项目';
+    renderEditor(); updateUnitFilterOptions(); renderList();
+    toast('项目已删除');
+  });
+
+  // 认证系统
+  var authMode = 'signin';
+  var tabs = document.querySelectorAll('.tabs button');
+  tabs.forEach(function(b){
+    b.addEventListener('click', function(){
+      authMode = this.getAttribute('data-mode');
+      tabs.forEach(function(x){ x.classList.toggle('active', x === b); });
+      $('auth-submit').textContent = authMode === 'signin' ? '登录' : '创建账号';
+    });
+  });
+
+  $('auth-form').addEventListener('submit', async function(e){
+    e.preventDefault();
+    var email = $('email').value.trim(), password = $('password').value;
+    var isSignin = authMode === 'signin';
+    $('auth-submit').disabled = true;
+    try {
+      var r = isSignin ? await sb.auth.signInWithPassword({ email: email, password: password })
+                       : await sb.auth.signUp({ email: email, password: password });
+      if (r.error) throw r.error;
+    } catch(err) {
+      $('auth-error').textContent = err.message || '登录异常';
+    } finally {
+      $('auth-submit').disabled = false;
+    }
+  });
+
+  $('btn-signout').addEventListener('click', async function(){
+    await saveNow(); await sb.auth.signOut();
+  });
+
+  async function loadData() {
+    var r = await sb.from('projects').select(COLS).order('created_at', { ascending: false });
+    if (!r.error) {
+      projects = (r.data || []).map(normalize);
+      if (projects.length && !current) current = projects[0];
+      updateUnitFilterOptions();
+      renderList();
+      renderEditor();
+    }
+  }
+
+  // 会话启动监听
+  sb.auth.getSession().then(function(s){
+    user = s.data && s.data.session ? s.data.session.user : null;
+    $('boot').classList.add('hidden');
+    if (user) {
+      $('app').classList.remove('hidden');
+      $('user-email').textContent = user.email || '';
+      loadData();
+    } else {
+      $('auth').classList.remove('hidden');
+    }
+  });
+
+  sb.auth.onAuthStateChange(function(_e, s){
+    user = s ? s.user : null;
+    $('auth').classList.toggle('hidden', !!user);
+    $('app').classList.toggle('hidden', !user);
+    if (user) { $('user-email').textContent = user.email || ''; loadData(); }
+  });
+})();
+</script>
+</body>
+</html>
